@@ -4,7 +4,8 @@
 Prototype implementation of a collaborative terrain mapping system using **modified M-Bots** as scouts and a **Raspberry Pi 4-powered robot** as the central coordinator. The scouts use LiDAR and odometry to map terrain, while the coordinator fuses their data into a global map in real time via **Wi-Fi using UDP**.
 
 ### System Architecture
-<img width="1700" height="1120" alt="Communication Architecture" src="https://github.com/user-attachments/assets/23c26e42-0e79-4aa5-9854-cd93f9030838" />
+<img width="3094" height="2004" alt="Communication Architecture" src="https://github.com/user-attachments/assets/2e22e173-c8b7-48bc-96d3-0e4930db88b8" />
+
 
 
 ### Core Objectives
