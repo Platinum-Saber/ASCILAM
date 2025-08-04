@@ -3,6 +3,10 @@
 # Custom environment file
 .lidar_env
 
+# ROS2 Container specific files
+install
+log
+
 # Python
 __pycache__/
 *.py[cod]
