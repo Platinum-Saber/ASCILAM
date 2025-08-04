@@ -1,0 +1,10 @@
+# Requirements for LIDAR project
+# Core scientific computing and visualization
+numpy>=1.21.0
+matplotlib>=3.5.0
+
+# LIDAR communication library
+rplidar=0.9.2
+
+# Optional: For better development experience
+pyserial>=3.5  # Often required by rplidar for serial communication
