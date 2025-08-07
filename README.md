@@ -20,7 +20,7 @@ Prototype implementation of a collaborative terrain mapping system using **modif
 |---------------------|-------------------------------------------|------------------------------|
 | Base Platform       | Modified M-Bot                            | Custom Robot Chassis         |
 | Controller          | M-Bot Controller + Wi-Fi Module (e.g. ESP32) | Raspberry Pi 4               |
-| Sensors             | LiDAR (e.g., RPLiDAR A1), Wheel Encoders, IMU | None                         |
+| Sensors             | LiDAR (RPLiDAR A2, STL-19P), Wheel Encoders, IMU | None                         |
 | Communication       | Wi-Fi + UDP                              | Wi-Fi + UDP    |
 | Power Supply        | Rechargeable Battery                      | Power Bank / Battery Module  |
 
@@ -30,8 +30,8 @@ Prototype implementation of a collaborative terrain mapping system using **modif
 
 | Task                | Tool/Package                               |
 |---------------------|---------------------------------------------|
-| OS                  | Custom FW (M-Bot) / Ubuntu 24.04 (Raspberry Pi) |
-| Framework           | ROS 2 Jazzy (Coordinator)                  |
+| OS                  | Custom FW (M-Bot) / Ubuntu 20.04 (Raspberry Pi) |
+| Framework           | ROS 2 Foxy (Coordinator)                  |
 | SLAM & Mapping      | GMapping / Cartographer (Scouts)           |
 | Localization        | `robot_localization` package               |
 | Communication       | UDP over Wi-Fi                            |
