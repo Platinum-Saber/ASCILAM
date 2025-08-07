@@ -1,11 +1,11 @@
-# Embedded Systems Dev Container with ROS2 Humble
+# Embedded Systems Dev Container with ROS2 Foxy
 
-This project is configured to run in a Docker dev container with Ubuntu 22.04, ROS2 Humble, and desktop environment support.
+This project is configured to run in a Docker dev container with Ubuntu 20.04, ROS2 Foxy, and desktop environment support for STL-19P LIDAR integration.
 
 ## What's Included
 
-- **Base OS**: Ubuntu 22.04 LTS (via OSRF ROS2 Humble Desktop image)
-- **ROS2**: Humble Hawksbill (LTS)
+- **Base OS**: Ubuntu 20.04 LTS (via OSRF ROS2 Foxy Desktop image)
+- **ROS2**: Foxy Fitzroy (LTS)
 - **Desktop Environment**: VNC and web-based desktop access
 - **Development Tools**:
   - GCC/G++ compiler toolchain
@@ -24,7 +24,7 @@ This project is configured to run in a Docker dev container with Ubuntu 22.04, R
   - Common Python packages for embedded development (pyserial, numpy, matplotlib)
   - Multi-architecture compilation support
   - ROS2 development tools (rosdep, vcstool, colcon)
-  - **RPLidar ROS2 packages** for LIDAR sensor integration
+  - **LDLIDAR STL ROS2 packages** for STL-19P LIDAR sensor integration
 - **Simulation Tools**:
   - Gazebo simulation environment
   - Joint state publisher GUI
@@ -60,7 +60,7 @@ This project is configured to run in a Docker dev container with Ubuntu 22.04, R
 ## ROS2 Usage
 
 - **ROS2 Environment**: Automatically sourced in terminal sessions
-- **Workspace**: A ROS2 workspace is created at `/home/ubuntu/ros2_ws/`
+- **Workspace**: A ROS2 workspace is created at `/home/ubuntu/ldlidar_ros2_ws/` with STL LIDAR drivers pre-installed
 - **Build packages**: Use `colcon build` in the workspace
 - **Source workspace**: `source install/setup.bash` after building
 
@@ -77,7 +77,7 @@ ros2 node list
 ros2 pkg create --build-type ament_cmake my_package
 
 # Build workspace
-cd /home/ubuntu/ros2_ws
+cd /home/ubuntu/ldlidar_ros2_ws
 colcon build
 
 # Run examples
@@ -85,18 +85,62 @@ ros2 run demo_nodes_cpp talker
 ros2 run demo_nodes_py listener
 ```
 
-### RPLidar Usage:
-- Refer [Official RPLidar documentation](https://github.com/Slamtec/rplidar_ros/tree/ros2) to install the ROS2 packages.
+### STL-19P LIDAR Usage:
+
+The container comes with pre-installed LDLIDAR STL ROS2 drivers supporting STL-19P, LD06, LD19, and STL-27L models.
+
+**Available STL-19P Commands:**
 
 ```bash
-# Launch RPLidar node
-ros2 launch rplidar_ros rplidar_a1_launch.py
+# Set device permissions (run once after connecting LIDAR)
+sudo chmod 777 /dev/ttyUSB0
 
-# Launch RPLidar with custom parameters
-ros2 launch rplidar_ros rplidar_a2m8_launch.py
+# Launch STL-19P LIDAR node (basic)
+ros2 launch ldlidar_stl_ros2 ld19.launch.py
 
-# View laser scan data in RViz
-ros2 run rviz2 rviz2
+# Launch STL-19P with RViz2 visualization
+ros2 launch ldlidar_stl_ros2 viewer_ld19.launch.py
+
+# Manual RViz2 setup
+rviz2
+# Then open: ~/ldlidar_ros2_ws/src/ldlidar_stl_ros2/rviz2/ldlidar.rviz
+
+# Check LIDAR data topics
+ros2 topic list
+ros2 topic echo /scan
+
+# Monitor LIDAR node status
+ros2 node list
+ros2 node info /LD19
+```
+
+**STL-19P Configuration Parameters:**
+
+```python
+# Key parameters in ld19.launch.py:
+{'product_name': 'LDLiDAR_LD19'}
+{'port_name': '/dev/ttyUSB0'}          # Update based on your system
+{'port_baudrate': 230400}              # STL-19P standard baud rate
+{'laser_scan_dir': True}               # Counterclockwise scan
+{'enable_angle_crop_func': False}      # Disable angle filtering
+{'topic_name': 'scan'}                 # ROS2 topic name
+{'frame_id': 'base_laser'}             # TF frame
+```
+
+**Troubleshooting STL-19P:**
+
+```bash
+# Check device detection
+ls -l /dev/tty*
+
+# Verify permissions
+ls -l /dev/ttyUSB0
+
+# Test serial communication
+sudo dmesg | grep tty
+
+# Check ROS2 environment
+printenv | grep ROS
 ```
 
 ## Customization
@@ -111,7 +155,7 @@ If your embedded system communicates over specific ports, add them to the `forwa
 
 ## Serial Device Access (Windows)
 
-To use serial devices like RPLidar in the container on Windows:
+To use serial devices like STL-19P LIDAR in the container on Windows:
 
 1. **Install usbipd-win**:
 
@@ -125,7 +169,7 @@ To use serial devices like RPLidar in the container on Windows:
    usbipd list
    ```
 
-3. **Bind your device** (run as Administrator):
+3. **Bind your STL-19P device** (run as Administrator):
 
    ```powershell
    usbipd bind --busid <BUSID>
@@ -138,10 +182,51 @@ To use serial devices like RPLidar in the container on Windows:
    ```
 
 5. **Verify in container**:
+
    ```bash
    ls /dev/tty*
    # Should show /dev/ttyUSB0 or /dev/ttyACM0
+
+   # Set permissions for STL-19P
+   sudo chmod 777 /dev/ttyUSB0
    ```
+
+## STL-19P LIDAR Specifications
+
+- **Model**: LDROBOT STL-19P
+- **Range**: 0.05m - 12m
+- **Accuracy**: ±2cm
+- **Scan Rate**: 10Hz
+- **Angular Resolution**: 1°
+- **Interface**: UART (230400 baud)
+- **Power**: 5V via USB
+- **Dimensions**: Compact form factor suitable for robotics applications
+
+## Quick Start with STL-19P
+
+1. **Connect Hardware**:
+
+   - Connect STL-19P to USB port
+   - Verify device recognition: `ls /dev/tty*`
+
+2. **Set Permissions**:
+
+   ```bash
+   sudo chmod 777 /dev/ttyUSB0
+   ```
+
+3. **Launch LIDAR**:
+
+   ```bash
+   cd ~/ldlidar_ros2_ws
+   source install/setup.bash
+   ros2 launch ldlidar_stl_ros2 viewer_ld19.launch.py
+   ```
+
+4. **Verify Data**:
+   - Check RViz2 visualization
+   - Monitor `/scan` topic
+   - Verify 360° laser scan data
 
 ## Troubleshooting
 
