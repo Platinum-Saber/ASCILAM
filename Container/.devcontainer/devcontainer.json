@@ -1,9 +1,10 @@
 {
-    "name": "humble desktop",
+    "name": "foxy-desktop",
     "dockerFile": "Dockerfile",
     "runArgs": [
         "--privileged",
-        "--network=host"
+        "--network=host",
+        "--device=/dev/ttyUSB0"  // To support LD19 serial access
     ],
     "workspaceMount": "source=${localWorkspaceFolder},target=/${localWorkspaceFolderBasename},type=bind",
     "workspaceFolder": "/${localWorkspaceFolderBasename}",
@@ -44,7 +45,7 @@
             "settings": {
                 "terminal.integrated.defaultProfile.linux": "bash",
                 "python.defaultInterpreterPath": "/usr/bin/python3",
-                "ros.distro": "humble",
+                "ros.distro": "foxy",
                 "C_Cpp.default.intelliSenseMode": "linux-gcc-x64",
                 "C_Cpp.default.compilerPath": "/usr/bin/gcc",
                 "files.associations": {
