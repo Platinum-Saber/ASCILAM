@@ -1,5 +1,5 @@
 # ASCILAM Project .gitignore
-
+python_testing
 # Custom environment file
 .lidar_env
 
@@ -120,7 +120,8 @@ tmp/
 # Backup files
 *.bak
 *.backup
-
+Container
+coordinator
 # LIDAR specific
 # Uncomment these if you have LIDAR data files you don't want to track
 # *.lidar
