@@ -1,5 +1,7 @@
 # ASCILAM Project .gitignore
 
+coordinator\INSTRUCTIONS.md
+
 # Custom environment file
 .lidar_env
 
