@@ -1,5 +1,5 @@
-#define RX_PIN 16   // Adjust to your wiring
-#define TX_PIN 17   // Adjust to your wiring
+#define RX_PIN 3   // Adjust to your wiring
+#define TX_PIN 1   // Adjust to your wiring
 
 HardwareSerial MBotSerial(1);
 
