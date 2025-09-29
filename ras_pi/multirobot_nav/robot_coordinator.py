@@ -14,10 +14,20 @@ class RobotCoordinator(Node):
         self.declare_parameter('coordination_strategy', 'frontier_based')
         self.declare_parameter('min_robot_distance', 1.5)
         self.declare_parameter('exploration_complete_threshold', 0.90)
+        self.declare_parameter('auto_start_exploration', True)
+        self.declare_parameter('frontier_min_size', 5)
+        self.declare_parameter('frontier_cluster_distance', 1.0)
+        self.declare_parameter('goal_assignment_interval', 3.0)
+        self.declare_parameter('max_exploration_range', 10.0)
         
         self.coordination_strategy = self.get_parameter('coordination_strategy').value
         self.min_robot_distance = self.get_parameter('min_robot_distance').value
         self.exploration_threshold = self.get_parameter('exploration_complete_threshold').value
+        self.auto_start_exploration = self.get_parameter('auto_start_exploration').value
+        self.frontier_min_size = self.get_parameter('frontier_min_size').value
+        self.frontier_cluster_distance = self.get_parameter('frontier_cluster_distance').value
+        self.goal_assignment_interval = self.get_parameter('goal_assignment_interval').value
+        self.max_exploration_range = self.get_parameter('max_exploration_range').value
         
         # Publishers for robot commands
         self.robot1_cmd_pub = self.create_publisher(Twist, '/robot1/cmd_vel', 10)
@@ -37,7 +47,7 @@ class RobotCoordinator(Node):
         self.map_sub = self.create_subscription(
             OccupancyGrid, '/map', self.map_callback, 10)
         
-        # Robot states
+        # Robot states with initial poses
         self.robot1_pose = None
         self.robot2_pose = None
         self.robot1_scan = None
@@ -47,13 +57,28 @@ class RobotCoordinator(Node):
         self.robot1_goal = None
         self.robot2_goal = None
         
-        # Coordination timer
-        self.coordination_timer = self.create_timer(2.0, self.coordinate_robots)
+        # Exploration state
+        self.exploration_active = False
+        self.last_goal_assignment = 0
+        self.robot1_goal_reached = True
+        self.robot2_goal_reached = True
+        self.exploration_started = False
+        
+        # Initial poses
+        self.robot1_initial = {'x': 0.0, 'y': 0.0, 'yaw': 0.0}
+        self.robot2_initial = {'x': 1.0, 'y': 0.0, 'yaw': math.pi}
+        
+        # Coordination timer - use goal_assignment_interval
+        self.coordination_timer = self.create_timer(
+            self.goal_assignment_interval, self.coordinate_robots)
         
         # Safety timer for collision avoidance
         self.safety_timer = self.create_timer(0.2, self.safety_check)
         
-        self.get_logger().info('Robot Coordinator initialized')
+        # Startup timer to begin exploration
+        self.startup_timer = self.create_timer(5.0, self.start_exploration)
+        
+        self.get_logger().info('Robot Coordinator initialized - Auto exploration enabled')
 
     def robot1_odom_callback(self, msg):
         self.robot1_pose = msg.pose.pose
@@ -108,7 +133,7 @@ class RobotCoordinator(Node):
         
         self.exploration_frontiers = self.cluster_frontiers(frontiers)
 
-    def cluster_frontiers(self, frontiers, cluster_distance=1.0):
+    def cluster_frontiers(self, frontiers):
         if not frontiers:
             return []
         
@@ -128,63 +153,110 @@ class RobotCoordinator(Node):
                 
                 dist = math.sqrt((frontier[0] - other_frontier[0])**2 + 
                                (frontier[1] - other_frontier[1])**2)
-                if dist < cluster_distance:
+                if dist < self.frontier_cluster_distance:
                     cluster.append(other_frontier)
                     used.add(j)
             
-            if len(cluster) >= 3:
+            if len(cluster) >= self.frontier_min_size:
                 center_x = sum(f[0] for f in cluster) / len(cluster)
                 center_y = sum(f[1] for f in cluster) / len(cluster)
-                clusters.append((center_x, center_y))
+                
+                # Filter by exploration range from origin
+                dist_from_origin = math.sqrt(center_x**2 + center_y**2)
+                if dist_from_origin <= self.max_exploration_range:
+                    clusters.append((center_x, center_y))
         
         return clusters
 
+    def start_exploration(self):
+        """Start automatic exploration after initial setup"""
+        if self.auto_start_exploration and not self.exploration_started:
+            self.exploration_active = True
+            self.exploration_started = True
+            self.startup_timer.cancel()
+            self.get_logger().info('Starting automatic frontier exploration!')
+    
     def coordinate_robots(self):
         if not all([self.robot1_pose, self.robot2_pose]):
             return
         
+        if not self.exploration_active:
+            return
+        
+        # Check if goals are reached
+        self.check_goal_completion()
+        
         if self.is_exploration_complete():
             self.stop_robots()
+            self.exploration_active = False
             self.get_logger().info('Exploration complete!')
             return
         
         if self.coordination_strategy == 'frontier_based':
             self.assign_frontier_goals()
+    
+    def check_goal_completion(self):
+        """Check if robots have reached their goals"""
+        if self.robot1_goal and self.robot1_pose:
+            dist1 = math.sqrt(
+                (self.robot1_pose.position.x - self.robot1_goal[0])**2 +
+                (self.robot1_pose.position.y - self.robot1_goal[1])**2
+            )
+            if dist1 < 0.5:  # Goal tolerance
+                self.robot1_goal_reached = True
+                self.get_logger().info('Robot1 reached goal!')
+        
+        if self.robot2_goal and self.robot2_pose:
+            dist2 = math.sqrt(
+                (self.robot2_pose.position.x - self.robot2_goal[0])**2 +
+                (self.robot2_pose.position.y - self.robot2_goal[1])**2
+            )
+            if dist2 < 0.5:  # Goal tolerance
+                self.robot2_goal_reached = True
+                self.get_logger().info('Robot2 reached goal!')
 
     def assign_frontier_goals(self):
-        if len(self.exploration_frontiers) < 2:
+        # Only assign new goals if robots have reached their current goals
+        if not (self.robot1_goal_reached or self.robot2_goal_reached):
+            return
+        
+        if len(self.exploration_frontiers) < 1:
+            self.get_logger().info('No frontiers found, continuing search...')
             return
         
         robot1_pos = (self.robot1_pose.position.x, self.robot1_pose.position.y)
         robot2_pos = (self.robot2_pose.position.x, self.robot2_pose.position.y)
         
-        best_assignment = None
-        min_cost = float('inf')
+        # Assign goals to robots that need them
+        available_frontiers = list(self.exploration_frontiers)
         
-        for i, frontier1 in enumerate(self.exploration_frontiers):
-            for j, frontier2 in enumerate(self.exploration_frontiers):
-                if i == j:
-                    continue
-                
-                dist1_to_f1 = math.sqrt((robot1_pos[0] - frontier1[0])**2 + 
-                                      (robot1_pos[1] - frontier1[1])**2)
-                dist2_to_f2 = math.sqrt((robot2_pos[0] - frontier2[0])**2 + 
-                                      (robot2_pos[1] - frontier2[1])**2)
-                
-                frontier_dist = math.sqrt((frontier1[0] - frontier2[0])**2 + 
-                                        (frontier1[1] - frontier2[1])**2)
-                
-                if frontier_dist < self.min_robot_distance:
-                    continue
-                
-                total_cost = dist1_to_f1 + dist2_to_f2
-                if total_cost < min_cost:
-                    min_cost = total_cost
-                    best_assignment = (frontier1, frontier2)
+        if self.robot1_goal_reached and available_frontiers:
+            # Find closest frontier for robot1
+            best_frontier1 = min(available_frontiers, 
+                               key=lambda f: math.sqrt((robot1_pos[0] - f[0])**2 + (robot1_pos[1] - f[1])**2))
+            self.send_goal_to_robot('robot1', best_frontier1)
+            self.robot1_goal_reached = False
+            available_frontiers.remove(best_frontier1)
         
-        if best_assignment:
-            self.send_goal_to_robot('robot1', best_assignment[0])
-            self.send_goal_to_robot('robot2', best_assignment[1])
+        if self.robot2_goal_reached and available_frontiers:
+            # Find closest frontier for robot2 that maintains minimum distance
+            valid_frontiers = []
+            for frontier in available_frontiers:
+                if self.robot1_goal:
+                    dist_to_robot1_goal = math.sqrt(
+                        (frontier[0] - self.robot1_goal[0])**2 + 
+                        (frontier[1] - self.robot1_goal[1])**2
+                    )
+                    if dist_to_robot1_goal >= self.min_robot_distance:
+                        valid_frontiers.append(frontier)
+                else:
+                    valid_frontiers.append(frontier)
+            
+            if valid_frontiers:
+                best_frontier2 = min(valid_frontiers, 
+                                   key=lambda f: math.sqrt((robot2_pos[0] - f[0])**2 + (robot2_pos[1] - f[1])**2))
+                self.send_goal_to_robot('robot2', best_frontier2)
+                self.robot2_goal_reached = False
 
     def send_goal_to_robot(self, robot_name, goal_pos):
         goal_msg = PoseStamped()

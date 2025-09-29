@@ -28,7 +28,12 @@ def generate_launch_description():
             parameters=[{
                 'coordination_strategy': 'frontier_based',
                 'min_robot_distance': 1.5,
-                'exploration_complete_threshold': 0.90
+                'exploration_complete_threshold': 0.90,
+                'auto_start_exploration': True,
+                'frontier_min_size': 5,
+                'frontier_cluster_distance': 1.0,
+                'goal_assignment_interval': 3.0,
+                'max_exploration_range': 10.0
             }],
             output='screen'
         ),
@@ -48,7 +53,9 @@ def generate_launch_description():
                 'safety_distance': 0.3,
                 'reaction_time': 0.2,
                 'max_linear_velocity': 0.5,
-                'max_angular_velocity': 1.0
+                'max_angular_velocity': 1.0,
+                'auto_explore': True,
+                'exploration_goal_timeout': 30.0
             }],
             output='screen'
         ),
@@ -67,7 +74,9 @@ def generate_launch_description():
                 'safety_distance': 0.3,
                 'reaction_time': 0.2,
                 'max_linear_velocity': 0.5,
-                'max_angular_velocity': 1.0
+                'max_angular_velocity': 1.0,
+                'auto_explore': True,
+                'exploration_goal_timeout': 30.0
             }],
             output='screen'
         ),

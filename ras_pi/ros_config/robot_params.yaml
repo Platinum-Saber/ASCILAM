@@ -13,12 +13,42 @@ robot_controller:
     max_linear_velocity: 0.5
     max_angular_velocity: 1.0
 
+    # Automatic exploration
+    auto_explore: true
+    exploration_goal_timeout: 30.0 # seconds
+
+# Initial Robot Poses
+robot1_initial_pose:
+  ros__parameters:
+    x: 0.0
+    y: 0.0
+    z: 0.0
+    roll: 0.0
+    pitch: 0.0
+    yaw: 0.0 # 0 degrees (facing +X)
+
+robot2_initial_pose:
+  ros__parameters:
+    x: 1.0
+    y: 0.0
+    z: 0.0
+    roll: 0.0
+    pitch: 0.0
+    yaw: 3.14159 # 180 degrees (facing -X)
+
 # Robot Coordinator Parameters  
 robot_coordinator:
   ros__parameters:
     coordination_strategy: "frontier_based"
     min_robot_distance: 1.5
     exploration_complete_threshold: 0.90
+
+    # Automatic exploration parameters
+    auto_start_exploration: true
+    frontier_min_size: 5 # Minimum frontier cluster size
+    frontier_cluster_distance: 1.0 # meters
+    goal_assignment_interval: 3.0 # seconds
+    max_exploration_range: 10.0 # meters from origin
 
 # Multi-Robot SLAM Parameters
 multi_robot_slam:

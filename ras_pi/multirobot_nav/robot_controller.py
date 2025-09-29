@@ -26,6 +26,10 @@ class RobotController(Node):
         self.declare_parameter('max_linear_velocity', 0.5)
         self.declare_parameter('max_angular_velocity', 1.0)
         
+        # Automatic exploration parameters
+        self.declare_parameter('auto_explore', True)
+        self.declare_parameter('exploration_goal_timeout', 30.0)
+        
         self.robot_name = self.get_parameter('robot_name').value
         self.linear_speed = self.get_parameter('linear_speed').value
         self.angular_speed = self.get_parameter('angular_speed').value
@@ -64,6 +68,12 @@ class RobotController(Node):
         self.emergency_stop = False
         self.scan_history = deque(maxlen=5)  # Keep last 5 scans for trend analysis
         
+        # Exploration parameters
+        self.auto_explore = self.get_parameter('auto_explore').value
+        self.exploration_goal_timeout = self.get_parameter('exploration_goal_timeout').value
+        self.last_goal_time = time.time()
+        self.exploration_active = self.auto_explore
+        
         # Control timer
         self.control_timer = self.create_timer(0.1, self.control_loop)
         
@@ -86,7 +96,8 @@ class RobotController(Node):
     def goal_callback(self, msg):
         self.current_goal = (msg.pose.position.x, msg.pose.position.y)
         self.goal_reached = False
-        self.get_logger().info(f'{self.robot_name} received new goal: {self.current_goal}')
+        self.last_goal_time = time.time()
+        self.get_logger().info(f'{self.robot_name} received new exploration goal: {self.current_goal}')
 
     def control_loop(self):
         """Enhanced control loop with dynamic obstacle avoidance"""
@@ -104,9 +115,17 @@ class RobotController(Node):
             self.emergency_stop = True
             self.get_logger().warn(f"{self.robot_name}: Emergency stop due to dynamic obstacle!")
         elif self.current_goal is not None and not self.goal_reached:
+            # Check for goal timeout
+            if time.time() - self.last_goal_time > self.exploration_goal_timeout:
+                self.get_logger().warn(f'{self.robot_name}: Goal timeout, marking as reached')
+                self.goal_reached = True
+                self.emergency_stop = False
+                self.publish_cmd_vel(cmd)
+                return
+                
             if self.is_goal_reached():
                 self.goal_reached = True
-                self.get_logger().info(f'{self.robot_name} reached goal!')
+                self.get_logger().info(f'{self.robot_name} reached exploration goal!')
                 self.emergency_stop = False
                 self.publish_cmd_vel(cmd)
                 return

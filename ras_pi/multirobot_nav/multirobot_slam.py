@@ -66,7 +66,10 @@ class MultiRobotSLAM(Node):
         # Temporal decay timer for dynamic environments
         self.decay_timer = self.create_timer(1.0, self.apply_temporal_decay)
         
-        self.get_logger().info('Multi-Robot Dynamic SLAM initialized')
+        # Initialize robot poses
+        self.initialize_robot_poses()
+        
+        self.get_logger().info('Multi-Robot Dynamic SLAM initialized with initial poses')
 
     def robot1_scan_callback(self, msg):
         self.process_scan(msg, 'robot1')
@@ -170,6 +173,60 @@ class MultiRobotSLAM(Node):
         self.occupancy_prob[grid_y, grid_x] = posterior
         self.observation_count[grid_y, grid_x] += 1
         self.last_observation_time[grid_y, grid_x] = timestamp
+
+    def initialize_robot_poses(self):
+        """Initialize robot starting poses"""
+        from geometry_msgs.msg import PoseWithCovarianceStamped
+        import math
+        
+        # Create pose publishers for initial poses
+        self.robot1_pose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, '/robot1/initialpose', 10)
+        self.robot2_pose_pub = self.create_publisher(
+            PoseWithCovarianceStamped, '/robot2/initialpose', 10)
+        
+        # Timer to publish initial poses
+        self.initial_pose_timer = self.create_timer(1.0, self.publish_initial_poses)
+        self.pose_published_count = 0
+    
+    def publish_initial_poses(self):
+        """Publish initial robot poses"""
+        if self.pose_published_count >= 5:  # Publish 5 times then stop
+            self.initial_pose_timer.cancel()
+            return
+            
+        import math
+        from geometry_msgs.msg import PoseWithCovarianceStamped
+        
+        # Robot 1: (0,0,0) facing +X (0 degrees)
+        pose1_msg = PoseWithCovarianceStamped()
+        pose1_msg.header.stamp = self.get_clock().now().to_msg()
+        pose1_msg.header.frame_id = 'map'
+        pose1_msg.pose.pose.position.x = 0.0
+        pose1_msg.pose.pose.position.y = 0.0
+        pose1_msg.pose.pose.position.z = 0.0
+        pose1_msg.pose.pose.orientation.x = 0.0
+        pose1_msg.pose.pose.orientation.y = 0.0
+        pose1_msg.pose.pose.orientation.z = 0.0
+        pose1_msg.pose.pose.orientation.w = 1.0
+        
+        # Robot 2: (1,0,0) facing -X (180 degrees)
+        pose2_msg = PoseWithCovarianceStamped()
+        pose2_msg.header.stamp = self.get_clock().now().to_msg()
+        pose2_msg.header.frame_id = 'map'
+        pose2_msg.pose.pose.position.x = 1.0
+        pose2_msg.pose.pose.position.y = 0.0
+        pose2_msg.pose.pose.position.z = 0.0
+        pose2_msg.pose.pose.orientation.x = 0.0
+        pose2_msg.pose.pose.orientation.y = 0.0
+        pose2_msg.pose.pose.orientation.z = 1.0  # 180 degrees (sin(π/2) = 1)
+        pose2_msg.pose.pose.orientation.w = 0.0  # 180 degrees (cos(π/2) = 0)
+        
+        self.robot1_pose_pub.publish(pose1_msg)
+        self.robot2_pose_pub.publish(pose2_msg)
+        
+        self.pose_published_count += 1
+        self.get_logger().info(f'Published initial poses (attempt {self.pose_published_count})')
 
     def apply_temporal_decay(self):
         """Apply temporal decay to reduce confidence in old observations"""
