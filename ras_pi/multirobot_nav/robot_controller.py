@@ -2,9 +2,11 @@ import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist, PoseStamped
 from sensor_msgs.msg import LaserScan
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, OccupancyGrid
 import math
 import numpy as np
+from collections import deque
+import time
 
 class RobotController(Node):
     def __init__(self):
@@ -17,11 +19,24 @@ class RobotController(Node):
         self.declare_parameter('safe_distance', 0.4)
         self.declare_parameter('goal_tolerance', 0.3)
         
+        # Dynamic obstacle detection parameters
+        self.declare_parameter('obstacle_threshold', 0.5)
+        self.declare_parameter('safety_distance', 0.3)
+        self.declare_parameter('reaction_time', 0.2)
+        self.declare_parameter('max_linear_velocity', 0.5)
+        self.declare_parameter('max_angular_velocity', 1.0)
+        
         self.robot_name = self.get_parameter('robot_name').value
         self.linear_speed = self.get_parameter('linear_speed').value
         self.angular_speed = self.get_parameter('angular_speed').value
         self.safe_distance = self.get_parameter('safe_distance').value
         self.goal_tolerance = self.get_parameter('goal_tolerance').value
+        
+        self.obstacle_threshold = self.get_parameter('obstacle_threshold').value
+        self.safety_distance = self.get_parameter('safety_distance').value
+        self.reaction_time = self.get_parameter('reaction_time').value
+        self.max_linear_velocity = self.get_parameter('max_linear_velocity').value
+        self.max_angular_velocity = self.get_parameter('max_angular_velocity').value
         
         # Publishers
         self.cmd_vel_pub = self.create_publisher(Twist, f'/{self.robot_name}/cmd_vel', 10)
@@ -33,12 +48,21 @@ class RobotController(Node):
             Odometry, f'/{self.robot_name}/odom', self.odom_callback, 10)
         self.goal_sub = self.create_subscription(
             PoseStamped, f'/{self.robot_name}/goal_pose', self.goal_callback, 10)
+        self.map_sub = self.create_subscription(
+            OccupancyGrid, '/map', self.map_callback, 10)
         
         # State variables
         self.current_scan = None
         self.current_pose = None
         self.current_goal = None
         self.goal_reached = True
+        self.current_map = None
+        
+        # Dynamic obstacle tracking
+        self.previous_scan = None
+        self.obstacle_velocities = {}
+        self.emergency_stop = False
+        self.scan_history = deque(maxlen=5)  # Keep last 5 scans for trend analysis
         
         # Control timer
         self.control_timer = self.create_timer(0.1, self.control_loop)
@@ -47,6 +71,14 @@ class RobotController(Node):
 
     def scan_callback(self, msg):
         self.current_scan = msg
+        self.scan_history.append((msg, time.time()))
+        
+        if self.previous_scan is not None:
+            self.track_dynamic_obstacles(msg, self.previous_scan)
+        self.previous_scan = msg
+    
+    def map_callback(self, msg):
+        self.current_map = msg
 
     def odom_callback(self, msg):
         self.current_pose = msg.pose.pose
@@ -57,15 +89,25 @@ class RobotController(Node):
         self.get_logger().info(f'{self.robot_name} received new goal: {self.current_goal}')
 
     def control_loop(self):
+        """Enhanced control loop with dynamic obstacle avoidance"""
         if self.current_scan is None or self.current_pose is None:
             return
         
         cmd = Twist()
         
-        if self.current_goal is not None and not self.goal_reached:
+        # Check for immediate collision threats from dynamic obstacles
+        immediate_threat = self.check_immediate_threats()
+        
+        if immediate_threat:
+            # Emergency stop
+            cmd = Twist()
+            self.emergency_stop = True
+            self.get_logger().warn(f"{self.robot_name}: Emergency stop due to dynamic obstacle!")
+        elif self.current_goal is not None and not self.goal_reached:
             if self.is_goal_reached():
                 self.goal_reached = True
                 self.get_logger().info(f'{self.robot_name} reached goal!')
+                self.emergency_stop = False
                 self.publish_cmd_vel(cmd)
                 return
             
@@ -77,20 +119,20 @@ class RobotController(Node):
             current_yaw = self.get_yaw_from_pose(self.current_pose)
             angle_diff = self.normalize_angle(goal_angle - current_yaw)
             
-            obstacle_detected, obstacle_direction = self.detect_obstacles()
+            # Enhanced obstacle detection (static + dynamic)
+            static_obstacle, obstacle_direction = self.detect_obstacles()
+            dynamic_obstacle = self.detect_dynamic_obstacles()
             
-            if obstacle_detected:
-                cmd = self.obstacle_avoidance_behavior(obstacle_direction)
+            if static_obstacle or dynamic_obstacle:
+                cmd = self.enhanced_obstacle_avoidance(obstacle_direction, dynamic_obstacle)
             else:
-                if abs(angle_diff) > 0.2:
-                    cmd.angular.z = self.angular_speed if angle_diff > 0 else -self.angular_speed
-                    cmd.linear.x = 0.05
-                else:
-                    cmd.linear.x = self.linear_speed
-                    cmd.angular.z = 0.3 * angle_diff
+                # Normal navigation with dynamic awareness
+                cmd = self.compute_safe_velocity(angle_diff)
+                self.emergency_stop = False
         else:
             cmd.linear.x = 0.0
             cmd.angular.z = 0.0
+            self.emergency_stop = False
         
         self.publish_cmd_vel(cmd)
 
@@ -116,15 +158,149 @@ class RobotController(Node):
         
         return False, None
 
-    def obstacle_avoidance_behavior(self, obstacle_direction):
+    def track_dynamic_obstacles(self, current_scan, previous_scan):
+        """Track moving obstacles by comparing consecutive scans"""
+        if len(current_scan.ranges) != len(previous_scan.ranges):
+            return
+        
+        current_time = time.time()
+        
+        for i in range(len(current_scan.ranges)):
+            current_range = current_scan.ranges[i]
+            previous_range = previous_scan.ranges[i]
+            
+            if (current_range < self.obstacle_threshold and 
+                previous_range < self.obstacle_threshold):
+                
+                # Calculate apparent velocity
+                range_change = current_range - previous_range
+                time_diff = 0.1  # Assuming 10Hz scan rate
+                
+                if abs(range_change) > 0.05:  # Significant change
+                    angle = current_scan.angle_min + i * current_scan.angle_increment
+                    
+                    # Store obstacle info
+                    self.obstacle_velocities[i] = {
+                        'angle': angle,
+                        'velocity': range_change / time_diff,
+                        'distance': current_range,
+                        'timestamp': current_time
+                    }
+    
+    def predict_obstacle_position(self, obstacle_info, prediction_time):
+        """Predict where a dynamic obstacle will be"""
+        current_dist = obstacle_info['distance']
+        velocity = obstacle_info['velocity']
+        angle = obstacle_info['angle']
+        
+        # Simple linear prediction
+        predicted_dist = current_dist + velocity * prediction_time
+        
+        return {
+            'distance': predicted_dist,
+            'angle': angle,
+            'x': predicted_dist * math.cos(angle),
+            'y': predicted_dist * math.sin(angle)
+        }
+    
+    def check_immediate_threats(self):
+        """Check for immediate collision threats from dynamic obstacles"""
+        if not self.obstacle_velocities:
+            return False
+        
+        current_time = time.time()
+        
+        for obs_id, obs_info in self.obstacle_velocities.items():
+            # Check if obstacle data is recent
+            age = current_time - obs_info['timestamp']
+            if age > 1.0:  # Data older than 1 second
+                continue
+            
+            # Predict obstacle position
+            predicted_pos = self.predict_obstacle_position(
+                obs_info, self.reaction_time
+            )
+            
+            # Check if obstacle is approaching and close
+            if (predicted_pos['distance'] < self.safety_distance and 
+                obs_info['velocity'] < 0):  # Approaching (negative velocity)
+                return True
+        
+        return False
+    
+    def detect_dynamic_obstacles(self):
+        """Enhanced dynamic obstacle detection using scan history"""
+        if len(self.scan_history) < 3:
+            return False
+        
+        # Analyze recent scans for movement patterns
+        recent_scans = list(self.scan_history)[-3:]
+        
+        for i in range(len(recent_scans[0][0].ranges)):
+            ranges = [scan[0].ranges[i] for scan in recent_scans if 
+                     i < len(scan[0].ranges) and scan[0].ranges[i] < self.obstacle_threshold]
+            
+            if len(ranges) >= 2:
+                # Check for significant variance indicating movement
+                variance = np.var(ranges)
+                if variance > 0.1:  # Threshold for dynamic detection
+                    return True
+        
+        return False
+    
+    def enhanced_obstacle_avoidance(self, static_direction, dynamic_detected):
+        """Enhanced obstacle avoidance considering both static and dynamic obstacles"""
         cmd = Twist()
         
-        if obstacle_direction == 'left':
-            cmd.angular.z = -self.angular_speed
+        if dynamic_detected:
+            # More aggressive avoidance for dynamic obstacles
+            if static_direction == 'left':
+                cmd.angular.z = -self.angular_speed * 1.5
+            else:
+                cmd.angular.z = self.angular_speed * 1.5
+            cmd.linear.x = 0.02  # Slower speed for safety
         else:
-            cmd.angular.z = self.angular_speed
+            # Standard static obstacle avoidance
+            if static_direction == 'left':
+                cmd.angular.z = -self.angular_speed
+            else:
+                cmd.angular.z = self.angular_speed
+            cmd.linear.x = 0.05
         
-        cmd.linear.x = 0.05
+        return cmd
+    
+    def compute_safe_velocity(self, angle_diff):
+        """Compute safe velocity considering dynamic obstacles"""
+        cmd = Twist()
+        
+        # Base navigation
+        if abs(angle_diff) > 0.2:
+            cmd.angular.z = self.angular_speed if angle_diff > 0 else -self.angular_speed
+            cmd.linear.x = 0.05
+        else:
+            cmd.linear.x = self.linear_speed
+            cmd.angular.z = 0.3 * angle_diff
+        
+        # Adjust for dynamic obstacles
+        current_time = time.time()
+        for obs_info in self.obstacle_velocities.values():
+            age = current_time - obs_info['timestamp']
+            if age > 0.5:  # Skip old data
+                continue
+                
+            if obs_info['distance'] < 1.0:  # Within 1 meter
+                # Reduce speed based on obstacle proximity and velocity
+                speed_factor = max(0.1, obs_info['distance'] / 1.0)
+                cmd.linear.x *= speed_factor
+                
+                # Add avoidance turning
+                if abs(obs_info['angle']) < math.pi / 4:  # Front sector
+                    cmd.angular.z += 0.5 * math.copysign(1, obs_info['angle'])
+        
+        # Clamp velocities to safe limits
+        cmd.linear.x = max(-self.max_linear_velocity, min(self.max_linear_velocity, cmd.linear.x))
+        cmd.angular.z = max(-self.max_angular_velocity, min(self.max_angular_velocity, cmd.angular.z))
+        
         return cmd
 
     def is_goal_reached(self):
@@ -153,6 +329,11 @@ class RobotController(Node):
         return angle
 
     def publish_cmd_vel(self, cmd):
+        # Clean up old obstacle data
+        current_time = time.time()
+        self.obstacle_velocities = {k: v for k, v in self.obstacle_velocities.items() 
+                                   if current_time - v['timestamp'] < 2.0}
+        
         self.cmd_vel_pub.publish(cmd)
 
 def main(args=None):

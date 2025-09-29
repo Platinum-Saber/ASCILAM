@@ -33,7 +33,7 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # Robot controllers - handle individual robot navigation
+        # Robot controllers - handle individual robot navigation with dynamic awareness
         Node(
             package='multirobot_nav',
             executable='robot_controller',
@@ -43,7 +43,12 @@ def generate_launch_description():
                 'linear_speed': 0.15,
                 'angular_speed': 0.3,
                 'safe_distance': 0.4,
-                'goal_tolerance': 0.3
+                'goal_tolerance': 0.3,
+                'obstacle_threshold': 0.5,
+                'safety_distance': 0.3,
+                'reaction_time': 0.2,
+                'max_linear_velocity': 0.5,
+                'max_angular_velocity': 1.0
             }],
             output='screen'
         ),
@@ -57,21 +62,33 @@ def generate_launch_description():
                 'linear_speed': 0.15,
                 'angular_speed': 0.3,
                 'safe_distance': 0.4,
-                'goal_tolerance': 0.3
+                'goal_tolerance': 0.3,
+                'obstacle_threshold': 0.5,
+                'safety_distance': 0.3,
+                'reaction_time': 0.2,
+                'max_linear_velocity': 0.5,
+                'max_angular_velocity': 1.0
             }],
             output='screen'
         ),
         
-        # Multi-robot SLAM - builds unified map from both robots
+        # Multi-robot SLAM - builds unified map from both robots with dynamic awareness
         Node(
             package='multirobot_nav',
-            executable='multi_robot_slam',
+            executable='multirobot_slam',
             name='multi_robot_slam',
             parameters=[{
                 'map_resolution': 0.05,
                 'map_width': 2000,
                 'map_height': 2000,
-                'update_rate': 5.0
+                'update_rate': 5.0,
+                'decay_rate': 0.95,
+                'min_observations': 3,
+                'temporal_window': 30.0,
+                'dynamic_threshold': 0.3,
+                'occupied_threshold': 0.7,
+                'free_threshold': 0.3,
+                'prior_probability': 0.5
             }],
             output='screen'
         ),
