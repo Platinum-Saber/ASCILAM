@@ -14,6 +14,37 @@ echo "Stopping hostapd and dnsmasq services..."
 sudo systemctl stop hostapd || true
 sudo systemctl stop dnsmasq || true
 
+# Stop conflicting services that prevent hostapd from working
+echo "Stopping conflicting services..."
+
+# Stop wpa_supplicant (conflicts with hostapd on same interface)
+if pgrep wpa_supplicant >/dev/null 2>&1; then
+    echo "Stopping wpa_supplicant..."
+    sudo pkill wpa_supplicant || true
+    sudo systemctl stop wpa_supplicant || true
+    sudo systemctl disable wpa_supplicant || true
+fi
+
+# Stop NetworkManager on wlan0
+if systemctl is-active NetworkManager >/dev/null 2>&1; then
+    echo "Disconnecting NetworkManager from wlan0..."
+    sudo nmcli device disconnect wlan0 || true
+    sudo nmcli device set wlan0 managed no || true
+fi
+
+# Fix potential DNS port conflicts
+echo "Resolving DNS port conflicts..."
+# Stop systemd-resolved if it's running and conflicting
+if systemctl is-active systemd-resolved >/dev/null 2>&1; then
+    echo "Stopping systemd-resolved to free port 53..."
+    sudo systemctl stop systemd-resolved
+    sudo systemctl disable systemd-resolved
+    # Fix DNS resolution
+    sudo rm -f /etc/resolv.conf
+    echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+    echo "nameserver 8.8.4.4" | sudo tee -a /etc/resolv.conf
+fi
+
 # 1.2 Configure static IP for wlan0
 echo "Configuring static IP for wlan0..."
 sudo bash -c 'cat >> /etc/dhcpcd.conf <<EOF
@@ -27,9 +58,11 @@ echo "Configuring dnsmasq..."
 sudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig || true
 sudo bash -c 'cat > /etc/dnsmasq.conf <<EOF
 interface=wlan0
+# Disable DNS to avoid port 53 conflicts, only provide DHCP
+port=0
 dhcp-range=192.168.4.10,192.168.4.50,255.255.255.0,24h
 dhcp-option=3,192.168.4.1
-dhcp-option=6,192.168.4.1
+dhcp-option=6,8.8.8.8
 # Reserve IPs for robots
 dhcp-host=robot1,192.168.4.10
 dhcp-host=robot2,192.168.4.20
@@ -85,4 +118,61 @@ echo "Enabling hostapd and dnsmasq services..."
 sudo systemctl enable hostapd
 sudo systemctl enable dnsmasq
 
-echo "Setup complete. Please reboot to apply all changes."
+# Fix any NetworkManager conflicts
+echo "Preventing NetworkManager conflicts..."
+if systemctl is-enabled NetworkManager >/dev/null 2>&1; then
+    echo "Configuring NetworkManager to ignore wlan0..."
+    # Create NetworkManager config to ignore wlan0
+    sudo mkdir -p /etc/NetworkManager/conf.d
+    sudo bash -c 'cat > /etc/NetworkManager/conf.d/99-unmanaged-devices.conf <<EOF
+[keyfile]
+unmanaged-devices=interface-name:wlan0
+EOF'
+    # Also add to main config as backup
+    if ! grep -q "unmanaged-devices" /etc/NetworkManager/NetworkManager.conf; then
+        sudo bash -c 'cat >> /etc/NetworkManager/NetworkManager.conf <<EOF
+
+[keyfile]
+unmanaged-devices=interface-name:wlan0
+EOF'
+    fi
+    # Restart NetworkManager to apply changes
+    sudo systemctl restart NetworkManager || true
+fi
+
+# Ensure WiFi radio is unblocked
+echo "Unblocking WiFi radio..."
+sudo rfkill unblock wifi || true
+
+# Reset wlan0 interface for hostapd control
+echo "Preparing wlan0 interface for AP mode..."
+sudo ip link set wlan0 down || true
+sudo iw dev wlan0 set type __ap || true
+sudo ip link set wlan0 up || true
+
+# Final restart sequence
+echo "Starting services in correct order..."
+sudo systemctl restart hostapd
+sudo systemctl restart dnsmasq
+
+# Verify services started correctly
+echo "Verifying service status..."
+if systemctl is-active hostapd >/dev/null 2>&1; then
+    echo "✅ hostapd is running"
+else
+    echo "❌ hostapd failed to start"
+fi
+
+if systemctl is-active dnsmasq >/dev/null 2>&1; then
+    echo "✅ dnsmasq is running"
+else
+    echo "❌ dnsmasq failed to start"
+fi
+
+echo "Setup complete. Access Point should be ready."
+echo "SSID: MultiRobot_Network"
+echo "Password: multirobot2024"
+echo "AP IP: 192.168.4.1"
+echo ""
+echo "If devices still can't connect, run the diagnostic script:"
+echo "sudo ./diagnose_wifi_ap.sh"

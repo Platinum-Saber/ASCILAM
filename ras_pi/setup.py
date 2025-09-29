@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 import os
 from glob import glob
 
@@ -7,7 +7,7 @@ package_name = 'multirobot_nav'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=[package_name],
+    packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -17,8 +17,8 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='robot_team',
-    maintainer_email='team@robots.com',
+    maintainer='Platinum-Saber',
+    maintainer_email='sansikasuhan5@gmail.com',
     description='Multi-robot navigation with LiDAR sensors',
     license='MIT',
     tests_require=['pytest'],

@@ -1,0 +1,31 @@
+# Robot Controller Parameters
+robot_controller:
+  ros__parameters:
+    linear_speed: 0.15
+    angular_speed: 0.3
+    safe_distance: 0.4
+    goal_tolerance: 0.3
+
+# Robot Coordinator Parameters  
+robot_coordinator:
+  ros__parameters:
+    coordination_strategy: "frontier_based"
+    min_robot_distance: 1.5
+    exploration_complete_threshold: 0.90
+
+# Multi-Robot SLAM Parameters
+multi_robot_slam:
+  ros__parameters:
+    map_resolution: 0.05
+    map_width: 2000
+    map_height: 2000
+    update_rate: 5.0
+
+# LiDAR Parameters
+lidar:
+  ros__parameters:
+    range_min: 0.15
+    range_max: 12.0
+    angle_min: 0.0
+    angle_max: 6.28318530718  # 2*PI
+    angle_increment: 0.0174532925199  # PI/180

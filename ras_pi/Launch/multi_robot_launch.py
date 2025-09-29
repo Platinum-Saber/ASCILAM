@@ -1,25 +1,26 @@
 from launch import LaunchDescription
 from launch_ros.actions import Node
-from launch.actions import ExecuteProcess
 
 def generate_launch_description():
     return LaunchDescription([
-        # micro-ROS agents
+        # micro-ROS agents for ESP32 communication
         Node(
             package='micro_ros_agent',
             executable='micro_ros_agent',
             arguments=['udp4', '--port', '8888'],
-            name='micro_ros_agent_robot1'
+            name='micro_ros_agent_robot1',
+            output='screen'
         ),
         
         Node(
             package='micro_ros_agent',
             executable='micro_ros_agent',
             arguments=['udp4', '--port', '8889'],
-            name='micro_ros_agent_robot2'
+            name='micro_ros_agent_robot2',
+            output='screen'
         ),
         
-        # Robot coordinator
+        # Robot coordinator - manages exploration and coordination
         Node(
             package='multirobot_nav',
             executable='robot_coordinator',
@@ -28,10 +29,11 @@ def generate_launch_description():
                 'coordination_strategy': 'frontier_based',
                 'min_robot_distance': 1.5,
                 'exploration_complete_threshold': 0.90
-            }]
+            }],
+            output='screen'
         ),
         
-        # Robot controllers
+        # Robot controllers - handle individual robot navigation
         Node(
             package='multirobot_nav',
             executable='robot_controller',
@@ -42,7 +44,8 @@ def generate_launch_description():
                 'angular_speed': 0.3,
                 'safe_distance': 0.4,
                 'goal_tolerance': 0.3
-            }]
+            }],
+            output='screen'
         ),
         
         Node(
@@ -55,10 +58,11 @@ def generate_launch_description():
                 'angular_speed': 0.3,
                 'safe_distance': 0.4,
                 'goal_tolerance': 0.3
-            }]
+            }],
+            output='screen'
         ),
         
-        # Multi-robot SLAM
+        # Multi-robot SLAM - builds unified map from both robots
         Node(
             package='multirobot_nav',
             executable='multi_robot_slam',
@@ -68,10 +72,12 @@ def generate_launch_description():
                 'map_width': 2000,
                 'map_height': 2000,
                 'update_rate': 5.0
-            }]
+            }],
+            output='screen'
         ),
         
-        # Static transforms
+        # TF Static transforms - Define coordinate frame relationships
+        # Map frame to robot odometry frames
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
@@ -86,6 +92,23 @@ def generate_launch_description():
             name='map_to_robot2_odom'
         ),
         
+        # CRITICAL: Robot odometry to base_link frames (These were missing!)
+        # The ESP32 publishes odometry with these frame relationships
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            arguments=['0', '0', '0', '0', '0', '0', 'robot1/odom', 'robot1/base_link'],
+            name='robot1_odom_to_base_link'
+        ),
+        
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            arguments=['0', '0', '0', '0', '0', '0', 'robot2/odom', 'robot2/base_link'],
+            name='robot2_odom_to_base_link'
+        ),
+        
+        # Robot base_link to LiDAR sensor frames
         Node(
             package='tf2_ros',
             executable='static_transform_publisher',
