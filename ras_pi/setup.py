@@ -26,7 +26,7 @@ setup(
         'console_scripts': [
             'robot_coordinator = multirobot_nav.robot_coordinator:main',
             'robot_controller = multirobot_nav.robot_controller:main',
-            'multi_robot_slam = multirobot_nav.multi_robot_slam:main',
+            'multi_robot_slam = multirobot_nav.multirobot_slam:main',
         ],
     },
 )
