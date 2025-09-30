@@ -1,4 +1,105 @@
-# ASCILAM Raspberry Pi Config Scripts: Functionality Documentation
+# ASCILAM Process Management Guide
+
+## The Port Binding Issue
+
+### Problem
+When you see this error:
+```
+[micro_ros_agent-1] bind error | port: 8888, errno: 98
+[micro_ros_agent-2] bind error | port: 8889, errno: 98
+```
+
+**Cause**: Previous micro-ROS agent processes are still running and occupying ports 8888 and 8889.
+
+### Quick Solutions
+
+#### Option 1: Use the Cleanup Script (Recommended)
+```bash
+cd ~/ASCILAM/config
+./cleanup_system.sh
+./start_exploration.sh
+```
+
+#### Option 2: Manual Cleanup
+```bash
+# Kill processes using the ports
+sudo lsof -ti:8888 | xargs kill -9
+sudo lsof -ti:8889 | xargs kill -9
+
+# Kill any remaining ROS processes
+pkill -f "micro_ros_agent"
+pkill -f "ros2 launch"
+
+# Then restart
+./start_exploration.sh
+```
+
+#### Option 3: Check System Status First
+```bash
+./status_check.sh
+# This will tell you what's running and what needs cleanup
+```
+
+## System Management Scripts
+
+### `status_check.sh`
+**Purpose**: Check what processes are running and port status
+```bash
+./status_check.sh
+```
+**Output**: Shows which components are running and if ports are free
+
+### `cleanup_system.sh` 
+**Purpose**: Stop all processes and free up ports
+```bash
+./cleanup_system.sh
+```
+**Use when**: 
+- Getting port binding errors
+- System seems stuck or unresponsive
+- Before restarting after a crash
+
+### `start_exploration.sh`
+**Purpose**: Start the complete system with automatic exploration
+```bash
+./start_exploration.sh
+```
+**Features**:
+- Automatically cleans up existing processes
+- Verifies ports are free before starting
+- Sets up robot initial poses
+- Starts automatic frontier exploration
+
+## Troubleshooting Workflow
+
+### 1. Check Current Status
+```bash
+./status_check.sh
+```
+
+### 2. Clean Up If Needed
+If status shows processes running or ports occupied:
+```bash
+./cleanup_system.sh
+```
+
+### 3. Start Fresh
+```bash
+./start_exploration.sh
+```
+
+### 4. Monitor System
+```bash
+# In separate terminals:
+ros2 topic list                    # See available topics
+ros2 topic echo /map               # Monitor map building
+ros2 topic echo /robot1/goal_pose  # See robot1 goals
+ros2 topic echo /robot2/goal_pose  # See robot2 goals
+```
+
+---
+
+# Original Config Scripts Documentation
 
 ## 1. ros2_foxy_setup.sh
 

@@ -175,12 +175,17 @@ class RobotCoordinator(Node):
             self.exploration_started = True
             self.startup_timer.cancel()
             self.get_logger().info('Starting automatic frontier exploration!')
+            
+            # Give initial exploration goals immediately
+            self.assign_initial_goals()
     
     def coordinate_robots(self):
         if not all([self.robot1_pose, self.robot2_pose]):
+            self.get_logger().debug('Waiting for robot poses...')
             return
         
         if not self.exploration_active:
+            self.get_logger().debug('Exploration not active yet...')
             return
         
         # Check if goals are reached
@@ -194,6 +199,9 @@ class RobotCoordinator(Node):
         
         if self.coordination_strategy == 'frontier_based':
             self.assign_frontier_goals()
+        
+        # Debug logging
+        self.get_logger().debug(f'Frontiers found: {len(self.exploration_frontiers)}, Robot1 goal reached: {self.robot1_goal_reached}, Robot2 goal reached: {self.robot2_goal_reached}')
     
     def check_goal_completion(self):
         """Check if robots have reached their goals"""
@@ -218,10 +226,12 @@ class RobotCoordinator(Node):
     def assign_frontier_goals(self):
         # Only assign new goals if robots have reached their current goals
         if not (self.robot1_goal_reached or self.robot2_goal_reached):
+            self.get_logger().debug('Both robots have active goals, waiting...')
             return
         
         if len(self.exploration_frontiers) < 1:
-            self.get_logger().info('No frontiers found, continuing search...')
+            self.get_logger().info('No frontiers found, sending simple movement goals...')
+            self.assign_simple_goals()
             return
         
         robot1_pos = (self.robot1_pose.position.x, self.robot1_pose.position.y)
@@ -296,6 +306,41 @@ class RobotCoordinator(Node):
         stop_msg = Twist()
         self.robot1_cmd_pub.publish(stop_msg)
         self.robot2_cmd_pub.publish(stop_msg)
+
+    def assign_initial_goals(self):
+        """Assign initial goals to get robots moving"""
+        self.get_logger().info('Assigning initial exploration goals...')
+        
+        # Robot1 moves forward in +X direction
+        initial_goal1 = (2.0, 0.0)
+        self.send_goal_to_robot('robot1', initial_goal1)
+        self.robot1_goal_reached = False
+        
+        # Robot2 moves forward in -X direction (it's facing 180 degrees)
+        initial_goal2 = (-1.0, 0.0)
+        self.send_goal_to_robot('robot2', initial_goal2) 
+        self.robot2_goal_reached = False
+        
+        self.get_logger().info('Initial goals assigned to start exploration!')
+    
+    def assign_simple_goals(self):
+        """Assign simple movement goals when no frontiers are detected"""
+        robot1_pos = (self.robot1_pose.position.x, self.robot1_pose.position.y)
+        robot2_pos = (self.robot2_pose.position.x, self.robot2_pose.position.y)
+        
+        if self.robot1_goal_reached:
+            # Move robot1 in a different direction to find new areas
+            goal_x = robot1_pos[0] + 2.0 * math.cos(self.robot1_pose.orientation.z)
+            goal_y = robot1_pos[1] + 2.0 * math.sin(self.robot1_pose.orientation.z) 
+            self.send_goal_to_robot('robot1', (goal_x, goal_y))
+            self.robot1_goal_reached = False
+            
+        if self.robot2_goal_reached:
+            # Move robot2 in a different direction
+            goal_x = robot2_pos[0] + 2.0 * math.cos(self.robot2_pose.orientation.z + math.pi)
+            goal_y = robot2_pos[1] + 2.0 * math.sin(self.robot2_pose.orientation.z + math.pi)
+            self.send_goal_to_robot('robot2', (goal_x, goal_y))
+            self.robot2_goal_reached = False
 
     def is_exploration_complete(self):
         if self.current_map is None:

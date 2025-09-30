@@ -102,9 +102,18 @@ class RobotController(Node):
     def control_loop(self):
         """Enhanced control loop with dynamic obstacle avoidance"""
         if self.current_scan is None or self.current_pose is None:
+            self.get_logger().debug(f'{self.robot_name}: Waiting for scan or pose data...')
             return
         
         cmd = Twist()
+        
+        # Debug current state
+        if self.current_goal is not None:
+            goal_dist = math.sqrt((self.current_pose.position.x - self.current_goal[0])**2 + 
+                                (self.current_pose.position.y - self.current_goal[1])**2)
+            self.get_logger().debug(f'{self.robot_name}: Goal distance: {goal_dist:.2f}m, Goal: {self.current_goal}')
+        else:
+            self.get_logger().debug(f'{self.robot_name}: No current goal')
         
         # Check for immediate collision threats from dynamic obstacles
         immediate_threat = self.check_immediate_threats()
