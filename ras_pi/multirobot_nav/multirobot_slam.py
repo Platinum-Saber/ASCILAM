@@ -1,7 +1,7 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
-from nav_msgs.msg import OccupancyGrid
+from nav_msgs.msg import OccupancyGrid, Odometry
 import tf2_ros
 import numpy as np
 import math
@@ -48,7 +48,18 @@ class MultiRobotSLAM(Node):
         self.robot2_scan_sub = self.create_subscription(
             LaserScan, '/robot2/scan', self.robot2_scan_callback, 10)
         
-        # TF
+        # Odometry subscribers
+        self.robot1_odom_sub = self.create_subscription(
+            Odometry, '/robot1/odom', self.robot1_odom_callback, 10)
+        self.robot2_odom_sub = self.create_subscription(
+            Odometry, '/robot2/odom', self.robot2_odom_callback, 10)
+        
+        # Robot pose tracking from odometry
+        self.robot1_pose = {'x': 0.0, 'y': 0.0, 'yaw': 0.0, 'timestamp': 0.0}
+        self.robot2_pose = {'x': 1.0, 'y': 0.0, 'yaw': math.pi, 'timestamp': 0.0}
+        self.pose_lock = False  # Simple mutex for pose updates
+        
+        # TF (kept for compatibility but not used for localization)
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
         
@@ -63,36 +74,91 @@ class MultiRobotSLAM(Node):
         # Update timer
         self.update_timer = self.create_timer(1.0/self.update_rate, self.publish_map)
         
+        # Status monitoring timer
+        self.status_timer = self.create_timer(5.0, self.log_system_status)
+        
         # Temporal decay timer for dynamic environments
         self.decay_timer = self.create_timer(1.0, self.apply_temporal_decay)
+        
+        # Transform broadcaster for publishing odometry-based transforms
+        self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+        
+        # Transform publishing timer
+        self.transform_timer = self.create_timer(0.1, self.publish_transforms)
         
         # Initialize robot poses
         self.initialize_robot_poses()
         
-        self.get_logger().info('Multi-Robot Dynamic SLAM initialized with initial poses')
+        self.get_logger().info('Multi-Robot Dynamic SLAM initialized with odometry-based localization')
+        self.get_logger().info('Robot1 initial pose: (0.0, 0.0, 0.0°)')
+        self.get_logger().info('Robot2 initial pose: (1.0, 0.0, 180.0°)')
+        self.get_logger().info('SLAM now uses real-time odometry data for accurate robot tracking')
 
     def robot1_scan_callback(self, msg):
         self.process_scan(msg, 'robot1')
 
     def robot2_scan_callback(self, msg):
         self.process_scan(msg, 'robot2')
+    
+    def robot1_odom_callback(self, msg):
+        """Update robot1 pose from odometry"""
+        if self.pose_lock:
+            return
+        
+        pose = msg.pose.pose
+        # Convert quaternion to yaw
+        qx, qy, qz, qw = pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w
+        siny_cosp = 2 * (qw * qz + qx * qy)
+        cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        
+        self.robot1_pose = {
+            'x': pose.position.x,
+            'y': pose.position.y,
+            'yaw': yaw,
+            'timestamp': time.time()
+        }
+        
+    def robot2_odom_callback(self, msg):
+        """Update robot2 pose from odometry"""
+        if self.pose_lock:
+            return
+            
+        pose = msg.pose.pose
+        # Convert quaternion to yaw
+        qx, qy, qz, qw = pose.orientation.x, pose.orientation.y, pose.orientation.z, pose.orientation.w
+        siny_cosp = 2 * (qw * qz + qx * qy)
+        cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+        yaw = math.atan2(siny_cosp, cosy_cosp)
+        
+        self.robot2_pose = {
+            'x': pose.position.x,
+            'y': pose.position.y,
+            'yaw': yaw,
+            'timestamp': time.time()
+        }
 
     def process_scan(self, scan_msg, robot_name):
+        """Process laser scan using odometry-based pose"""
         try:
-            transform = self.tf_buffer.lookup_transform(
-                'map', f'{robot_name}/base_link', rclpy.time.Time())
-            
-            robot_x = transform.transform.translation.x
-            robot_y = transform.transform.translation.y
-            
-            qx = transform.transform.rotation.x
-            qy = transform.transform.rotation.y
-            qz = transform.transform.rotation.z
-            qw = transform.transform.rotation.w
-            
-            siny_cosp = 2 * (qw * qz + qx * qy)
-            cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
-            robot_yaw = math.atan2(siny_cosp, cosy_cosp)
+            # Get robot pose from odometry data
+            if robot_name == 'robot1':
+                robot_pose = self.robot1_pose
+            elif robot_name == 'robot2':
+                robot_pose = self.robot2_pose
+            else:
+                self.get_logger().warn(f'Unknown robot name: {robot_name}')
+                return
+                
+            # Check if pose data is recent (within last 2 seconds)
+            current_time = time.time()
+            if current_time - robot_pose['timestamp'] > 2.0:
+                self.get_logger().warn(f'Stale odometry data for {robot_name}, age: {current_time - robot_pose["timestamp"]:.1f}s')
+                return
+                
+            robot_x = robot_pose['x']
+            robot_y = robot_pose['y']
+            robot_yaw = robot_pose['yaw']
             
             self.update_map_with_scan(scan_msg, robot_x, robot_y, robot_yaw)
             
@@ -292,6 +358,69 @@ class MultiRobotSLAM(Node):
         dynamic_cells = self.detect_dynamic_objects()
         if np.any(dynamic_cells):
             self.get_logger().info(f'Detected {np.sum(dynamic_cells)} dynamic cells')
+
+    def publish_transforms(self):
+        """Publish transforms based on odometry data"""
+        from geometry_msgs.msg import TransformStamped
+        
+        current_time = self.get_clock().now()
+        
+        # Publish robot1 transform
+        t1 = TransformStamped()
+        t1.header.stamp = current_time.to_msg()
+        t1.header.frame_id = 'map'
+        t1.child_frame_id = 'robot1/base_link'
+        t1.transform.translation.x = self.robot1_pose['x']
+        t1.transform.translation.y = self.robot1_pose['y']
+        t1.transform.translation.z = 0.0
+        
+        # Convert yaw to quaternion
+        yaw = self.robot1_pose['yaw']
+        t1.transform.rotation.x = 0.0
+        t1.transform.rotation.y = 0.0
+        t1.transform.rotation.z = math.sin(yaw / 2.0)
+        t1.transform.rotation.w = math.cos(yaw / 2.0)
+        
+        # Publish robot2 transform
+        t2 = TransformStamped()
+        t2.header.stamp = current_time.to_msg()
+        t2.header.frame_id = 'map'
+        t2.child_frame_id = 'robot2/base_link'
+        t2.transform.translation.x = self.robot2_pose['x']
+        t2.transform.translation.y = self.robot2_pose['y']
+        t2.transform.translation.z = 0.0
+        
+        # Convert yaw to quaternion
+        yaw = self.robot2_pose['yaw']
+        t2.transform.rotation.x = 0.0
+        t2.transform.rotation.y = 0.0
+        t2.transform.rotation.z = math.sin(yaw / 2.0)
+        t2.transform.rotation.w = math.cos(yaw / 2.0)
+        
+        # Broadcast transforms
+        self.tf_broadcaster.sendTransform([t1, t2])
+
+    def log_system_status(self):
+        """Log system status for monitoring"""
+        current_time = time.time()
+        
+        # Check odometry data freshness
+        r1_age = current_time - self.robot1_pose['timestamp']
+        r2_age = current_time - self.robot2_pose['timestamp']
+        
+        # Count occupied and free cells
+        occupied_cells = np.sum(self.occupancy_prob > self.occupied_threshold)
+        free_cells = np.sum(self.occupancy_prob < self.free_threshold)
+        total_observed = np.sum(self.observation_count > 0)
+        
+        self.get_logger().info(
+            f"SLAM Status - Robot1: ({self.robot1_pose['x']:.2f}, {self.robot1_pose['y']:.2f}, {math.degrees(self.robot1_pose['yaw']):.1f}°) "
+            f"age:{r1_age:.1f}s | Robot2: ({self.robot2_pose['x']:.2f}, {self.robot2_pose['y']:.2f}, {math.degrees(self.robot2_pose['yaw']):.1f}°) "
+            f"age:{r2_age:.1f}s"
+        )
+        self.get_logger().info(
+            f"Map Stats - Occupied: {occupied_cells}, Free: {free_cells}, Total observed: {total_observed}"
+        )
 
 def main(args=None):
     rclpy.init(args=args)

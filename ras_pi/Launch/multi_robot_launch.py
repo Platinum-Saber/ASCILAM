@@ -81,7 +81,7 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # Multi-robot SLAM - builds unified map from both robots with dynamic awareness
+        # Multi-robot SLAM - uses real-time odometry data for localization and mapping
         Node(
             package='multirobot_nav',
             executable='multirobot_slam',
@@ -102,37 +102,8 @@ def generate_launch_description():
             output='screen'
         ),
         
-        # TF Static transforms - Define coordinate frame relationships
-        # Map frame to robot odometry frames
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            arguments=['0', '0', '0', '0', '0', '0', 'map', 'robot1/odom'],
-            name='map_to_robot1_odom'
-        ),
-        
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            arguments=['0', '0', '0', '0', '0', '0', 'map', 'robot2/odom'],
-            name='map_to_robot2_odom'
-        ),
-        
-        # CRITICAL: Robot odometry to base_link frames (These were missing!)
-        # The ESP32 publishes odometry with these frame relationships
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            arguments=['0', '0', '0', '0', '0', '0', 'robot1/odom', 'robot1/base_link'],
-            name='robot1_odom_to_base_link'
-        ),
-        
-        Node(
-            package='tf2_ros',
-            executable='static_transform_publisher',
-            arguments=['0', '0', '0', '0', '0', '0', 'robot2/odom', 'robot2/base_link'],
-            name='robot2_odom_to_base_link'
-        ),
+        # TF Static transforms - Only sensor transforms needed
+        # Map->base_link transforms now published by SLAM system using odometry data
         
         # Robot base_link to LiDAR sensor frames
         Node(

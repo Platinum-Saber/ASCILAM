@@ -114,7 +114,9 @@ echo "  - rviz2 (for visualization)"
 echo "  - ros2 topic echo /map (for map updates)"
 echo "  - ros2 topic echo /robot1/goal_pose (for robot1 goals)"
 echo "  - ros2 topic echo /robot2/goal_pose (for robot2 goals)"
+echo "  - python3 config/test_odometry_integration.py (test odometry)"
 echo ""
+echo "NEW: SLAM now uses real-time odometry for accurate localization!"
 echo "Press Ctrl+C to stop the system"
 
 # Function to cleanup on exit
