@@ -32,7 +32,7 @@ const int agent_port = 8888;
 #define LIDAR_TX_PIN 17
 
 #define ARDUINO_SERIAL Serial1
-#define ARDUINO_RX_PIN 0
+#define ARDUINO_RX_PIN 3
 #define ARDUINO_TX_PIN 1
 
 #define STATUS_LED 2

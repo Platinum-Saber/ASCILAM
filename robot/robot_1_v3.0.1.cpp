@@ -6,7 +6,7 @@
 #include <Wire.h>
 #include <MPU6050_light.h>
 
-const int ROBOT_ID = 2; 
+const int ROBOT_ID = 1; 
 
 // Motor Control Pins (L298N)
 #define ENA 5   // Motor A PWM (LEFT)
